@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# docker-nextapp
 
-## Getting Started
+A production-ready Next.js application containerized using a multi-stage Docker build and pushed to Docker Hub. Built as a DevOps project covering Docker best practices — multi-stage builds, non-root user security, and image publishing.
 
-First, run the development server:
+## What This App Is
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+A default Next.js 16 application served in a lean, secure Docker container. The focus is not the app itself but how it is packaged and shipped using Docker.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## New Techniques Used
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Multi-stage Docker build** — three separate stages in one Dockerfile. Each stage starts fresh so the final image contains only what is needed to run the app, not the source code or dev dependencies. Reduces image size from ~600MB to ~80MB.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**Non-root user** — a system group called nodejs and a user called nextjs are created inside the container. The app runs as nextjs, never as root. Running as root is dangerous because if someone breaks out of the container they get root access on the host machine.
 
-## Learn More
+**npm ci instead of npm install** — installs exact versions from package-lock.json. Faster and deterministic — no version surprises between environments.
 
-To learn more about Next.js, take a look at the following resources:
+**NEXT_TELEMETRY_DISABLED** — disables Next.js anonymous usage tracking inside the container.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**standalone output** — next.config.ts is set to output: standalone which tells Next.js to bundle everything into a single server.js file. This is what makes the final image self-contained.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**.dockerignore** — excludes node_modules, .next, and .git from the build context. Without this Docker would copy hundreds of megabytes of files it doesn't need, slowing down every build.
 
-## Deploy on Vercel
+## Dockerfile Stages
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Stage 1 - deps
+Installs libc6-compat (required by some npm packages on Alpine) then runs npm ci to install exact dependencies from the lockfile.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Stage 2 - builder
+Copies node_modules from Stage 1 and the full source code. Runs npm run build to produce the optimized .next/standalone output.
+
+Stage 3 - runner
+Fresh Alpine image. Creates nodejs group and nextjs user. Copies only the three things needed at runtime: public/, .next/standalone/, .next/static/. Switches to non-root user and starts the app.
+
+## How to Run Locally
+
+Build the image:
+docker build -t docker-nextapp:latest .
+
+Run the container:
+docker run -p 3000:3000 docker-nextapp:latest
+
+Open http://localhost:3000 in your browser.
+
+## Docker Hub
+
+Image is publicly available on Docker Hub:
+docker pull daham27/docker-nextapp:latest
+docker run -p 3000:3000 daham27/docker-nextapp:latest
+
+## Steps to Push to Docker Hub
+
+1. Log in to Docker Hub
+docker login -u yourusername
+
+2. Build with your Docker Hub username as the tag
+docker build -t yourusername/docker-nextapp:latest .
+
+3. Push the image
+docker push yourusername/docker-nextapp:latest
+
+Image is now publicly available at https://hub.docker.com/r/yourusername/docker-nextapp
